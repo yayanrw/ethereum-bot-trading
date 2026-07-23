@@ -1,0 +1,6 @@
+node_modules/
+.env
+bun.lockb
+data/*.tmp
+data/evaluator.log
+data/bot.lock

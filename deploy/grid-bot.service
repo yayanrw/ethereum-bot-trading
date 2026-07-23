@@ -1,0 +1,45 @@
+# systemd unit for the grid bot (dry-run soak or live).
+#
+# Install (Linux server):
+#   1. Edit the placeholders below: User, WorkingDirectory, ExecStart bun path.
+#      Find the bun path on the server with:  which bun
+#   2. Copy:   sudo cp deploy/grid-bot.service /etc/systemd/system/
+#   3. Enable: sudo systemctl daemon-reload && sudo systemctl enable --now grid-bot
+#   4. Logs:   journalctl -u grid-bot -f
+#   5. Stop:   sudo systemctl stop grid-bot     (sends SIGTERM — bot releases its lock cleanly)
+#
+# The bot reads .env from WorkingDirectory. For a dry-run soak keep DRY_RUN=true
+# there; nothing else is required. Restart=always keeps it collecting data across
+# crashes, and the single-instance lock guarantees a restart never double-runs.
+
+[Unit]
+Description=ETH Grid Trading Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# --- EDIT THESE ---
+User=REPLACE_WITH_YOUR_USER
+WorkingDirectory=/REPLACE/WITH/PATH/TO/ethereum-bot-trading
+ExecStart=/REPLACE/WITH/PATH/TO/bun run src/index.ts
+# ------------------
+
+# .env in WorkingDirectory is loaded by Bun automatically; this is a belt-and-braces
+# fallback if you prefer an explicit file. Harmless if the file is the same one.
+EnvironmentFile=-/REPLACE/WITH/PATH/TO/ethereum-bot-trading/.env
+
+Restart=always
+RestartSec=10
+# Give the bot time to flush state + release its lock on stop.
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+# Basic hardening — the bot only needs its own dir and network.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/REPLACE/WITH/PATH/TO/ethereum-bot-trading/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

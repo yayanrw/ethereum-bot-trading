@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "updatedAt": "1970-01-01T00:00:00.000Z",
+  "rules": [
+    {
+      "id": "seed-atr-guard",
+      "action": "block_entry",
+      "when": [{ "indicator": "atrPct", "op": ">", "value": 12 }],
+      "rationale": "Seed rule, not evidence-based. Extreme volatility means a single candle spans more than the grid step, so a filled level is unlikely to find its +1 target before the next level fills. The evaluator will confirm, retune, or drop this once real trades exist.",
+      "createdAt": "1970-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "seed-rsi-guard",
+      "action": "block_entry",
+      "when": [{ "indicator": "rsi14", "op": ">", "value": 78 }],
+      "rationale": "Seed rule, not evidence-based. Grid trading earns in sideways and downtrending markets and underperforms buy-and-hold in a bull run; laddering into a blow-off top deploys capital at the worst levels. The evaluator will confirm, retune, or drop this once real trades exist.",
+      "createdAt": "1970-01-01T00:00:00.000Z"
+    }
+  ]
+}

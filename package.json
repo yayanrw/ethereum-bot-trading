@@ -1,0 +1,21 @@
+{
+  "name": "ethereum-bot-trading",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "evaluate": "bun run src/strategies/evaluator.ts",
+    "report": "bun run src/report.ts",
+    "reset-breaker": "bun run src/reset-breaker.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.113.0",
+    "ccxt": "^4.5.10"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  }
+}
