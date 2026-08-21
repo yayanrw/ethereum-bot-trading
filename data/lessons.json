@@ -1,12 +1,12 @@
 {
-  "version": 1,
-  "updatedAt": "1970-01-01T00:00:00.000Z",
+  "version": 2,
+  "updatedAt": "2026-08-21T00:00:00.000Z",
   "rules": [
     {
       "id": "seed-atr-guard",
       "action": "block_entry",
-      "when": [{ "indicator": "atrPct", "op": ">", "value": 12 }],
-      "rationale": "Seed rule, not evidence-based. Extreme volatility means a single candle spans more than the grid step, so a filled level is unlikely to find its +1 target before the next level fills. The evaluator will confirm, retune, or drop this once real trades exist.",
+      "when": [{ "indicator": "atrPct", "op": ">", "value": 4 }],
+      "rationale": "Retuned 2026-08-21: the original threshold of 12 never fired in 2026-07-24..2026-08-21 — observed atrPct over that period peaked at 2.50%. A threshold outside the observed range provides no protection at all. 4 sits above everything seen so far while staying in a realistic order of magnitude for 1h ETH candles; the evaluator will confirm, retune, or drop this once trades close under the new range.",
       "createdAt": "1970-01-01T00:00:00.000Z"
     },
     {
