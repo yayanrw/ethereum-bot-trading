@@ -1,1 +1,226 @@
-[]
+[
+  {
+    "id": "cd88dd12-ac60-4b81-8903-b0a005712ce0",
+    "type": "entry_filled",
+    "at": "2026-07-24T07:24:02.261Z",
+    "symbol": "ETH/USDT",
+    "gridLevel": 1900,
+    "price": 1900,
+    "qty": 0.0526,
+    "lotId": "4d6b004b-5a6d-4837-93fc-185fa39fcc3e",
+    "entryPrice": 1900,
+    "indicators": {
+      "price": 1903.01,
+      "rsi14": 46.984143136810076,
+      "atrPct": 0.7519642633896388,
+      "ema20": 1887.8159207223925,
+      "ema50": 1901.1177234313516,
+      "emaSpreadPct": -0.6996832728985577,
+      "volumeRatio": 0.7693066873731177,
+      "at": "2026-07-24T07:10:59.326Z"
+    }
+  },
+  {
+    "id": "14bc52c9-9ff9-4bdc-bddf-9520b6c946e6",
+    "type": "entry_blocked",
+    "at": "2026-07-26T16:00:40.840Z",
+    "symbol": "ETH/USDT",
+    "gridLevel": 1800,
+    "price": 1915.24,
+    "indicators": {
+      "price": 1915.24,
+      "rsi14": 83.15117270026687,
+      "atrPct": 0.43359386619037593,
+      "ema20": 1885.3215273650464,
+      "ema50": 1880.6122173139913,
+      "emaSpreadPct": 0.2504136688945507,
+      "volumeRatio": 2.2178121011906753,
+      "at": "2026-07-26T16:00:40.831Z"
+    },
+    "blockedBy": "seed-rsi-guard"
+  },
+  {
+    "id": "9abbe6c7-ba1b-460f-91b3-4f3540470ce5",
+    "type": "entry_blocked",
+    "at": "2026-07-26T22:01:00.590Z",
+    "symbol": "ETH/USDT",
+    "gridLevel": 1800,
+    "price": 1936.84,
+    "indicators": {
+      "price": 1936.84,
+      "rsi14": 80.71730329630297,
+      "atrPct": 0.4284383686244511,
+      "ema20": 1899.338812709465,
+      "ema50": 1888.4470096463074,
+      "emaSpreadPct": 0.5767597929685898,
+      "volumeRatio": 0.749297104422227,
+      "at": "2026-07-26T22:01:00.589Z"
+    },
+    "blockedBy": "seed-rsi-guard"
+  },
+  {
+    "id": "7a013a1b-ba81-4381-9683-df686ae30b87",
+    "type": "entry_blocked",
+    "at": "2026-07-27T06:00:46.887Z",
+    "symbol": "ETH/USDT",
+    "gridLevel": 1800,
+    "price": 1964.48,
+    "indicators": {
+      "price": 1964.48,
+      "rsi14": 78.5498553855452,
+      "atrPct": 0.5483272053734151,
+      "ema20": 1928.229683486179,
+      "ema50": 1905.7787449753641,
+      "emaSpreadPct": 1.1780453827605861,
+      "volumeRatio": 0.797289074730003,
+      "at": "2026-07-27T06:00:46.887Z"
+    },
+    "blockedBy": "seed-rsi-guard"
+  },
+  {
+    "id": "0176d16b-ee62-4703-84ea-f618ce657f1b",
+    "type": "entry_filled",
+    "at": "2026-08-15T09:48:19.587Z",
+    "symbol": "ETH/USDT",
+    "gridLevel": 1800,
+    "price": 1800,
+    "qty": 0.0555,
+    "lotId": "7da6d756-a929-4391-b0a8-debcddeb4738",
+    "entryPrice": 1800,
+    "indicators": {
+      "price": 1914.82,
+      "rsi14": 51.89768415990969,
+      "atrPct": 0.545600840403378,
+      "ema20": 1912.5792847180844,
+      "ema50": 1909.8406392156865,
+      "emaSpreadPct": 0.14339654556322753,
+      "volumeRatio": 1.1397630329848225,
+      "at": "2026-08-07T21:00:10.271Z"
+    }
+  },
+  {
+    "id": "20ba4af6-aa1a-4916-8d65-96b7c5e9c33c",
+    "type": "exit_filled",
+    "at": "2026-08-17T02:53:25.881Z",
+    "symbol": "ETH/USDT",
+    "gridLevel": 1800,
+    "price": 1900,
+    "qty": 0.0555,
+    "lotId": "7da6d756-a929-4391-b0a8-debcddeb4738",
+    "entryPrice": 1800,
+    "pnlUsdt": 5.55,
+    "pnlPct": 5.555555555555558,
+    "holdingHours": 41.08508027777778,
+    "indicators": {
+      "price": 1914.82,
+      "rsi14": 51.89768415990969,
+      "atrPct": 0.545600840403378,
+      "ema20": 1912.5792847180844,
+      "ema50": 1909.8406392156865,
+      "emaSpreadPct": 0.14339654556322753,
+      "volumeRatio": 1.1397630329848225,
+      "at": "2026-08-07T21:00:10.271Z"
+    },
+    "exitIndicators": {
+      "price": 1905.59,
+      "rsi14": 63.72354958361286,
+      "atrPct": 0.4020759419304222,
+      "ema20": 1882.1648498129268,
+      "ema50": 1882.3994999046463,
+      "emaSpreadPct": -0.01246547779742532,
+      "volumeRatio": 7.714572931301346,
+      "at": "2026-08-17T02:53:25.869Z"
+    }
+  },
+  {
+    "id": "e1d5b058-c8c2-411a-8fd7-68c6f079a5ba",
+    "type": "entry_blocked",
+    "at": "2026-08-19T15:00:39.713Z",
+    "symbol": "ETH/USDT",
+    "gridLevel": 1800,
+    "price": 1971.27,
+    "indicators": {
+      "price": 1971.27,
+      "rsi14": 79.65095381075795,
+      "atrPct": 0.5982762261032517,
+      "ema20": 1923.3170069863372,
+      "ema50": 1912.4087568925997,
+      "emaSpreadPct": 0.5703932307579411,
+      "volumeRatio": 1.6332955588505527,
+      "at": "2026-08-19T15:00:39.677Z"
+    },
+    "blockedBy": "seed-rsi-guard"
+  },
+  {
+    "id": "840da263-44d3-4c95-a6f9-013644e64234",
+    "type": "exit_filled",
+    "at": "2026-08-19T15:07:41.288Z",
+    "symbol": "ETH/USDT",
+    "gridLevel": 1900,
+    "price": 2000,
+    "qty": 0.0526,
+    "lotId": "4d6b004b-5a6d-4837-93fc-185fa39fcc3e",
+    "entryPrice": 1900,
+    "pnlUsdt": 5.26,
+    "pnlPct": 5.263157894736836,
+    "holdingHours": 631.7275069444445,
+    "indicators": {
+      "price": 1903.01,
+      "rsi14": 46.984143136810076,
+      "atrPct": 0.7519642633896388,
+      "ema20": 1887.8159207223925,
+      "ema50": 1901.1177234313516,
+      "emaSpreadPct": -0.6996832728985577,
+      "volumeRatio": 0.7693066873731177,
+      "at": "2026-07-24T07:10:59.326Z"
+    },
+    "exitIndicators": {
+      "price": 2013.53,
+      "rsi14": 79.65095381075795,
+      "atrPct": 0.5857195950547331,
+      "ema20": 1923.3170069863372,
+      "ema50": 1912.4087568925997,
+      "emaSpreadPct": 0.5703932307579411,
+      "volumeRatio": 1.6332955588505527,
+      "at": "2026-08-19T15:07:41.285Z"
+    }
+  },
+  {
+    "id": "d11ee575-8443-4da3-9939-d4e867693366",
+    "type": "entry_blocked",
+    "at": "2026-08-20T09:00:36.211Z",
+    "symbol": "ETH/USDT",
+    "gridLevel": 2200,
+    "price": 2282.51,
+    "indicators": {
+      "price": 2282.51,
+      "rsi14": 80.71123516421197,
+      "atrPct": 2.4993770219931233,
+      "ema20": 2185.025985188965,
+      "ema50": 2071.414096741538,
+      "emaSpreadPct": 5.484750182310032,
+      "volumeRatio": 0.4868502409847229,
+      "at": "2026-08-20T09:00:36.205Z"
+    },
+    "blockedBy": "seed-rsi-guard"
+  },
+  {
+    "id": "0c1ce336-ccc0-47b5-870f-885631bc7295",
+    "type": "entry_blocked",
+    "at": "2026-08-20T16:00:09.369Z",
+    "symbol": "ETH/USDT",
+    "gridLevel": 2200,
+    "price": 2326.87,
+    "indicators": {
+      "price": 2326.87,
+      "rsi14": 79.39801654110147,
+      "atrPct": 2.0269005937155393,
+      "ema20": 2239.1201558081325,
+      "ema50": 2125.0123673225307,
+      "emaSpreadPct": 5.369747030196115,
+      "volumeRatio": 0.41001579929172116,
+      "at": "2026-08-20T16:00:09.348Z"
+    },
+    "blockedBy": "seed-rsi-guard"
+  }
+]
