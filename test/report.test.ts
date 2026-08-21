@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { groupByDay, overallStats } from '../src/report.ts';
+import { adviseGridStep, groupByDay, overallStats } from '../src/report.ts';
 import type { Decision, IndicatorSnapshot } from '../src/types.ts';
 
-const ind = (): IndicatorSnapshot => ({
+const ind = (overrides: Partial<IndicatorSnapshot> = {}): IndicatorSnapshot => ({
   price: 1800,
   rsi14: 50,
   atrPct: 3,
@@ -11,6 +11,7 @@ const ind = (): IndicatorSnapshot => ({
   emaSpreadPct: 0,
   volumeRatio: 1,
   at: '2026-07-01T00:00:00.000Z',
+  ...overrides,
 });
 
 function exit(at: string, pnlPct: number, pnlUsdt: number): Decision {
@@ -40,6 +41,19 @@ function blocked(at: string): Decision {
     price: 1850,
     blockedBy: 'some-rule',
     indicators: ind(),
+  };
+}
+
+function withSnapshot(id: string, price: number, atrPct: number): Decision {
+  return {
+    id,
+    type: 'entry_blocked',
+    at: '2026-07-01T00:00:00.000Z',
+    symbol: 'ETH/USDT',
+    gridLevel: 1800,
+    price,
+    blockedBy: 'some-rule',
+    indicators: ind({ price, atrPct }),
   };
 }
 
@@ -103,5 +117,34 @@ describe('overallStats', () => {
     expect(total.totalPnlUsdt).toBeCloseTo(-5, 6);
     // Weighted by trade count: (10+10-50)/3, not a plain mean of the two daily averages.
     expect(total.avgPnlPct).toBeCloseTo(-10, 6);
+  });
+});
+
+describe('adviseGridStep', () => {
+  test('reports not enough data below the sample threshold', () => {
+    const decisions = Array.from({ length: 5 }, (_, i) => withSnapshot(`d${i}`, 1800, 3));
+    const advice = adviseGridStep(decisions, 100, 20);
+    expect(advice.enough).toBe(false);
+    expect(advice.samples).toBe(5);
+    expect(advice.note).toMatch(/too early/);
+  });
+
+  test('summarises observed range and avg ATR once enough samples exist', () => {
+    const decisions = Array.from({ length: 20 }, (_, i) =>
+      withSnapshot(`d${i}`, 1800 + i * 10, 2 + (i % 3)),
+    );
+    const advice = adviseGridStep(decisions, 100, 20);
+    expect(advice.enough).toBe(true);
+    expect(advice.samples).toBe(20);
+    expect(advice.minPrice).toBe(1800);
+    expect(advice.maxPrice).toBe(1990);
+    expect(advice.rangeUsdt).toBeCloseTo(190, 6);
+    expect(advice.note).toContain('$100 step');
+  });
+
+  test('is purely descriptive — never proposes a numeric replacement step', () => {
+    const decisions = Array.from({ length: 20 }, (_, i) => withSnapshot(`d${i}`, 1800, 5));
+    const advice = adviseGridStep(decisions, 100, 20);
+    expect(advice).not.toHaveProperty('suggestedStep');
   });
 });

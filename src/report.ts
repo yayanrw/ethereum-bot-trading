@@ -8,7 +8,69 @@
  * exit_held are excluded because there is nothing won or lost to count yet.
  */
 import { loadDecisions } from './core/memory.ts';
+import { loadConfig } from './config.ts';
 import type { Decision } from './types.ts';
+
+const MIN_GRID_STEP_SAMPLES = 20;
+
+export interface GridStepAdvice {
+  samples: number;
+  enough: boolean;
+  currentStep: number;
+  minPrice?: number;
+  maxPrice?: number;
+  rangeUsdt?: number;
+  avgAtrPct?: number;
+  note: string;
+}
+
+/**
+ * Pure, descriptive only — no I/O, no "optimal step" number. It reports the
+ * realised price range and average ATR% seen across every logged decision
+ * (entries, blocks, holds, exits all carry an indicator snapshot) so a human
+ * can judge whether GRID_STEP is too wide or too narrow for how the market has
+ * actually been moving. It deliberately does not compute a suggested value —
+ * with this little history that would be a guess dressed up as a number.
+ */
+export function adviseGridStep(
+  decisions: Decision[],
+  currentStep: number,
+  minSamples = MIN_GRID_STEP_SAMPLES,
+): GridStepAdvice {
+  const prices = decisions.map((d) => d.indicators.price).filter(Number.isFinite);
+  const atrs = decisions.map((d) => d.indicators.atrPct).filter(Number.isFinite);
+  const samples = prices.length;
+
+  if (samples < minSamples) {
+    return {
+      samples,
+      enough: false,
+      currentStep,
+      note: `Only ${samples} logged observations (need ${minSamples}) — too early to say anything about grid spacing.`,
+    };
+  }
+
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+  const rangeUsdt = maxPrice - minPrice;
+  const avgAtrPct = atrs.reduce((a, b) => a + b, 0) / atrs.length;
+  const levelsInRange = rangeUsdt / currentStep;
+
+  return {
+    samples,
+    enough: true,
+    currentStep,
+    minPrice,
+    maxPrice,
+    rangeUsdt,
+    avgAtrPct,
+    note:
+      `Observed price range $${minPrice.toFixed(0)}-$${maxPrice.toFixed(0)} ` +
+      `(${rangeUsdt.toFixed(0)} USDT) spans ~${levelsInRange.toFixed(1)} levels at the current ` +
+      `$${currentStep} step; average ATR ${avgAtrPct.toFixed(2)}%. Judge width/narrowness from ` +
+      `this, don't take it as a target — not a substitute for reviewing the price chart yourself.`,
+  };
+}
 
 export interface DailyStats {
   /** UTC calendar day, YYYY-MM-DD. */
@@ -98,10 +160,13 @@ if (import.meta.main) {
   const decisions = await loadDecisions();
   const days = groupByDay(decisions);
   const total = overallStats(days);
+  const config = loadConfig();
+  const gridStepAdvice = adviseGridStep(decisions, config.grid.step);
 
   if (process.argv.includes('--json')) {
-    console.log(JSON.stringify({ days, total }, null, 2));
+    console.log(JSON.stringify({ days, total, gridStepAdvice }, null, 2));
   } else {
     printTable(days, total);
+    console.log(`\nGRID_STEP (currently $${gridStepAdvice.currentStep}): ${gridStepAdvice.note}`);
   }
 }
