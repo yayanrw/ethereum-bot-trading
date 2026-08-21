@@ -37,6 +37,8 @@ export interface LessonEvidence {
   trades: number;
   winRate: number;
   avgPnlPct: number;
+  /** % return per day of capital locked up — the outcome metric that actually varies. */
+  avgPctPerDay: number;
 }
 
 export interface Lesson {

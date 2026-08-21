@@ -72,6 +72,19 @@ export function adviseGridStep(
   };
 }
 
+/**
+ * % return per day of capital locked up. The strategy is no-cutloss and every
+ * sell fills strictly above entry, so win rate is 100% by construction and
+ * pnlPct is fixed by which grid level filled — neither varies with market
+ * conditions. Holding time is the only outcome variable that does, and this
+ * turns it into the same units as pnlPct so it reads as money, not hours.
+ */
+export function pctPerDay(d: Decision): number {
+  const hours = d.holdingHours;
+  if (hours === undefined || hours <= 0) return 0;
+  return (d.pnlPct ?? 0) / (hours / 24);
+}
+
 export interface DailyStats {
   /** UTC calendar day, YYYY-MM-DD. */
   date: string;
@@ -80,6 +93,8 @@ export interface DailyStats {
   winRatePct: number;
   totalPnlUsdt: number;
   avgPnlPct: number;
+  avgHoldingHours: number;
+  avgPctPerDay: number;
 }
 
 /** UTC date key so grouping doesn't depend on the machine's local timezone. */
@@ -104,6 +119,8 @@ export function groupByDay(decisions: Decision[]): DailyStats[] {
       const wins = trades.filter((t) => (t.pnlPct ?? 0) > 0).length;
       const totalPnlUsdt = trades.reduce((s, t) => s + (t.pnlUsdt ?? 0), 0);
       const avgPnlPct = trades.reduce((s, t) => s + (t.pnlPct ?? 0), 0) / trades.length;
+      const avgHoldingHours = trades.reduce((s, t) => s + (t.holdingHours ?? 0), 0) / trades.length;
+      const avgPctPerDay = trades.reduce((s, t) => s + pctPerDay(t), 0) / trades.length;
       return {
         date,
         trades: trades.length,
@@ -111,6 +128,8 @@ export function groupByDay(decisions: Decision[]): DailyStats[] {
         winRatePct: (wins / trades.length) * 100,
         totalPnlUsdt,
         avgPnlPct,
+        avgHoldingHours,
+        avgPctPerDay,
       };
     });
 }
@@ -123,6 +142,8 @@ export function overallStats(days: DailyStats[]): DailyStats | undefined {
   const totalPnlUsdt = days.reduce((s, d) => s + d.totalPnlUsdt, 0);
   // Weighted by trade count, not a plain average of daily averages.
   const avgPnlPct = days.reduce((s, d) => s + d.avgPnlPct * d.trades, 0) / trades;
+  const avgHoldingHours = days.reduce((s, d) => s + d.avgHoldingHours * d.trades, 0) / trades;
+  const avgPctPerDay = days.reduce((s, d) => s + d.avgPctPerDay * d.trades, 0) / trades;
   return {
     date: 'ALL',
     trades,
@@ -130,6 +151,8 @@ export function overallStats(days: DailyStats[]): DailyStats | undefined {
     winRatePct: (wins / trades) * 100,
     totalPnlUsdt,
     avgPnlPct,
+    avgHoldingHours,
+    avgPctPerDay,
   };
 }
 
@@ -138,20 +161,22 @@ function printTable(days: DailyStats[], total: DailyStats | undefined): void {
     console.log('No closed trades yet — nothing to report.');
     return;
   }
-  console.log('date        trades  wins  win%    pnl(usdt)   avg pnl%');
+  console.log('date        trades  wins  win%    pnl(usdt)   avg pnl%  avg hold(h)  avg %/day');
   for (const d of days) {
     console.log(
       `${d.date}  ${String(d.trades).padStart(6)}  ${String(d.wins).padStart(4)}  ` +
         `${d.winRatePct.toFixed(1).padStart(5)}%  ${d.totalPnlUsdt.toFixed(2).padStart(10)}  ` +
-        `${d.avgPnlPct.toFixed(2).padStart(7)}%`,
+        `${d.avgPnlPct.toFixed(2).padStart(7)}%  ${d.avgHoldingHours.toFixed(1).padStart(11)}  ` +
+        `${d.avgPctPerDay.toFixed(2).padStart(8)}%`,
     );
   }
   if (total) {
-    console.log('----------  ------  ----  ------  ----------  --------');
+    console.log('----------  ------  ----  ------  ----------  --------  -----------  ---------');
     console.log(
       `${total.date.padEnd(10)}  ${String(total.trades).padStart(6)}  ${String(total.wins).padStart(4)}  ` +
         `${total.winRatePct.toFixed(1).padStart(5)}%  ${total.totalPnlUsdt.toFixed(2).padStart(10)}  ` +
-        `${total.avgPnlPct.toFixed(2).padStart(7)}%`,
+        `${total.avgPnlPct.toFixed(2).padStart(7)}%  ${total.avgHoldingHours.toFixed(1).padStart(11)}  ` +
+        `${total.avgPctPerDay.toFixed(2).padStart(8)}%`,
     );
   }
 }

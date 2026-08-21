@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { adviseGridStep, groupByDay, overallStats } from '../src/report.ts';
+import { adviseGridStep, groupByDay, overallStats, pctPerDay } from '../src/report.ts';
 import type { Decision, IndicatorSnapshot } from '../src/types.ts';
 
 const ind = (overrides: Partial<IndicatorSnapshot> = {}): IndicatorSnapshot => ({
@@ -14,7 +14,7 @@ const ind = (overrides: Partial<IndicatorSnapshot> = {}): IndicatorSnapshot => (
   ...overrides,
 });
 
-function exit(at: string, pnlPct: number, pnlUsdt: number): Decision {
+function exit(at: string, pnlPct: number, pnlUsdt: number, holdingHours = 4): Decision {
   return {
     id: `d-${at}-${pnlPct}`,
     type: 'exit_filled',
@@ -26,7 +26,7 @@ function exit(at: string, pnlPct: number, pnlUsdt: number): Decision {
     entryPrice: 1800,
     pnlPct,
     pnlUsdt,
-    holdingHours: 4,
+    holdingHours,
     indicators: ind(),
   };
 }
@@ -92,6 +92,17 @@ describe('groupByDay', () => {
     expect(d.avgPnlPct).toBeCloseTo(2, 6);
   });
 
+  test('computes avg holding hours and avg %/day per day', () => {
+    // 5% held 24h -> 5%/day; 10% held 240h (10 days) -> 1%/day.
+    const days = groupByDay([
+      exit('2026-07-01T01:00:00.000Z', 5, 5, 24),
+      exit('2026-07-01T02:00:00.000Z', 10, 10, 240),
+    ]);
+    const d = days[0]!;
+    expect(d.avgHoldingHours).toBeCloseTo((24 + 240) / 2, 6);
+    expect(d.avgPctPerDay).toBeCloseTo((5 + 1) / 2, 6);
+  });
+
   test('a breakeven trade (pnlPct 0) counts as a loss, not a win', () => {
     const days = groupByDay([exit('2026-07-01T01:00:00.000Z', 0, 0)]);
     expect(days[0]?.wins).toBe(0);
@@ -117,6 +128,31 @@ describe('overallStats', () => {
     expect(total.totalPnlUsdt).toBeCloseTo(-5, 6);
     // Weighted by trade count: (10+10-50)/3, not a plain mean of the two daily averages.
     expect(total.avgPnlPct).toBeCloseTo(-10, 6);
+  });
+
+  test('weights avgHoldingHours and avgPctPerDay by trade count too', () => {
+    const days = groupByDay([
+      exit('2026-07-01T01:00:00.000Z', 5, 5, 24),
+      exit('2026-07-01T02:00:00.000Z', 10, 10, 240),
+      exit('2026-07-02T01:00:00.000Z', 6, 6, 48),
+    ]);
+    const total = overallStats(days)!;
+    expect(total.avgHoldingHours).toBeCloseTo((24 + 240 + 48) / 3, 6);
+    // %/day: 5, 1, 3 -> mean 3
+    expect(total.avgPctPerDay).toBeCloseTo(3, 6);
+  });
+});
+
+describe('pctPerDay', () => {
+  test('converts pnlPct to a rate per day of holding time', () => {
+    expect(pctPerDay(exit('2026-07-01T00:00:00.000Z', 5, 5, 24))).toBeCloseTo(5, 6);
+    expect(pctPerDay(exit('2026-07-01T00:00:00.000Z', 5, 5, 240))).toBeCloseTo(0.5, 6);
+  });
+
+  test('guards against zero or missing holding time instead of dividing by it', () => {
+    expect(pctPerDay(exit('2026-07-01T00:00:00.000Z', 5, 5, 0))).toBe(0);
+    const noHold = { ...exit('2026-07-01T00:00:00.000Z', 5, 5), holdingHours: undefined };
+    expect(pctPerDay(noHold)).toBe(0);
   });
 });
 

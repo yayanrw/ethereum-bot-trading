@@ -6,6 +6,7 @@ import {
   saveLessons,
   writeJson,
 } from '../core/memory.ts';
+import { pctPerDay } from '../report.ts';
 import type { Decision, Lesson, LessonsFile } from '../types.ts';
 
 const MIN_CLOSED_TRADES = 5;
@@ -37,6 +38,26 @@ You are given the current rule set and a log of closed trades, each carrying the
 indicator snapshot taken when the entry was placed. Output a COMPLETE REPLACEMENT
 rule set — anything you omit is deleted.
 
+What the numbers actually mean — read this before drawing any conclusion:
+- Win rate is 100% by construction, always, for every slice of the data. This
+  strategy never cuts losses: a lot that would be a loser is simply never sold,
+  it sits and waits. A "trade" only appears in this report once it has closed,
+  and it can only close at a profit. Win rate carries zero information — never
+  cite it as evidence for or against a rule.
+- pnlPct is fixed by which grid level a lot bought at, not by market conditions
+  at entry. Buying at grid level X and selling one level up always yields
+  approximately the same %, regardless of RSI, ATR, or trend. Do not look for
+  a correlation between entry indicators and pnlPct — it cannot exist.
+- The metric that actually varies with market conditions, and the real cost of
+  a no-cutloss strategy, is holding time — how long capital sits in a lot
+  before it can be sold. Judge entry conditions by median holding time and
+  %/day (pnlPct normalised to a daily rate), not by win rate or raw pnlPct.
+- Because every lot eventually sells at a profit, block_entry can only ever
+  help during a sustained downtrend (avoiding capital getting locked into a
+  long, slow-to-resolve hold) and can only ever cost you during an uptrend
+  (skipping an entry that would have turned over quickly). Weigh a candidate
+  block_entry rule against that asymmetry, using %/day as the evidence.
+
 Rules for revising:
 - Keep rules the data still supports. Drop rules whose supporting evidence is gone.
 - Propose a new rule only when at least 5 trades show a clear pattern. A coincidence
@@ -45,11 +66,12 @@ Rules for revising:
 - Thresholds must sit inside the range actually observed in the data. Do not
   extrapolate to values no trade has ever seen.
 - Use hold_sell only when the data shows holding longer produced materially better
-  PnL under that condition. It is not a default.
+  %/day under that condition. It is not a default.
 - Blocked entries have no outcome — you cannot know whether they would have won.
   Use them only to detect over-blocking: if a rule blocks most of the time, it is
   probably too tight and should be loosened or dropped.
-- Every rationale must cite trade counts and results. "Seems risky" is not a rationale.
+- Every rationale must cite trade counts and %/day, not win rate or raw pnlPct.
+  "Seems risky" is not a rationale.
 - Prefer few strong rules over many weak ones. If the data supports no change,
   return the current rules unchanged.
 - Rule ids are stable identifiers: reuse the existing id when you keep or refine a
@@ -89,8 +111,9 @@ const LESSONS_SCHEMA = {
               trades: { type: 'integer' },
               winRate: { type: 'number' },
               avgPnlPct: { type: 'number' },
+              avgPctPerDay: { type: 'number' },
             },
-            required: ['trades', 'winRate', 'avgPnlPct'],
+            required: ['trades', 'winRate', 'avgPnlPct', 'avgPctPerDay'],
             additionalProperties: false,
           },
         },
@@ -107,6 +130,12 @@ const LESSONS_SCHEMA = {
 
 function n(v: number | undefined, digits = 2): string {
   return v === undefined ? '-' : v.toFixed(digits);
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
 }
 
 function bucketise(
@@ -130,9 +159,10 @@ function bucketise(
   const parts = buckets
     .map((b, i) => {
       if (b.length === 0) return null;
-      const wins = b.filter((t) => (t.pnlPct ?? 0) > 0).length;
       const avg = b.reduce((s, t) => s + (t.pnlPct ?? 0), 0) / b.length;
-      return `${names[i]}: ${b.length} trades, ${((wins / b.length) * 100).toFixed(0)}% win, avg ${avg.toFixed(2)}%`;
+      const medianHold = median(b.map((t) => t.holdingHours ?? 0));
+      const eff = b.reduce((s, t) => s + pctPerDay(t), 0) / b.length;
+      return `${names[i]}: ${b.length} trades, avg ${avg.toFixed(2)}%, median hold ${medianHold.toFixed(1)}h, ${eff.toFixed(2)}%/hari`;
     })
     .filter(Boolean);
   return `${label} — ${parts.join(' | ')}`;
@@ -167,13 +197,16 @@ export function buildReport(lessons: LessonsFile, closed: Decision[], blocked: D
   const totalUsdt = closed.reduce((s, t) => s + (t.pnlUsdt ?? 0), 0);
   const avgPct = closed.reduce((s, t) => s + (t.pnlPct ?? 0), 0) / closed.length;
   const avgHold = closed.reduce((s, t) => s + (t.holdingHours ?? 0), 0) / closed.length;
+  const medianHold = median(closed.map((t) => t.holdingHours ?? 0));
+  const avgEff = closed.reduce((s, t) => s + pctPerDay(t), 0) / closed.length;
 
   lines.push('');
   lines.push(
     `SUMMARY: ${closed.length} trades, ${wins} wins (${((wins / closed.length) * 100).toFixed(1)}%), ` +
-      `avg ${avgPct.toFixed(2)}%, total ${totalUsdt.toFixed(2)} USDT, avg hold ${avgHold.toFixed(1)}h`,
+      `avg ${avgPct.toFixed(2)}%, total ${totalUsdt.toFixed(2)} USDT, avg hold ${avgHold.toFixed(1)}h, ` +
+      `median hold ${medianHold.toFixed(1)}h, avg ${avgEff.toFixed(2)}%/hari`,
   );
-  lines.push(bucketise(closed, 'BY ENTRY ATR%', (d) => d.indicators.atrPct, [4, 8, 12]));
+  lines.push(bucketise(closed, 'BY ENTRY ATR%', (d) => d.indicators.atrPct, [0.5, 1.0, 2.0]));
   lines.push(bucketise(closed, 'BY ENTRY RSI', (d) => d.indicators.rsi14, [35, 50, 65]));
   lines.push(
     bucketise(closed, 'BY ENTRY EMA SPREAD%', (d) => d.indicators.emaSpreadPct, [-2, 0, 2]),

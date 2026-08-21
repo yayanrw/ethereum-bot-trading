@@ -21,9 +21,14 @@ function ind(over: Partial<IndicatorSnapshot> = {}): IndicatorSnapshot {
   };
 }
 
-/** Synthetic history: calm-market entries win, high-volatility entries lose. */
+/**
+ * Synthetic history: no-cutloss means every closed trade is a "win" by
+ * construction — the distinguishing outcome is holding time, not pnlPct.
+ * Calm-market entries turn over fast; high-volatility entries lock capital
+ * up for far longer even though both eventually sell at a profit.
+ */
 function syntheticTrades(): Decision[] {
-  const mk = (i: number, atrPct: number, pnlPct: number): Decision => ({
+  const mk = (i: number, atrPct: number, pnlPct: number, holdingHours: number): Decision => ({
     id: `t${i}`,
     type: 'exit_filled',
     at: `2026-07-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`,
@@ -34,12 +39,12 @@ function syntheticTrades(): Decision[] {
     entryPrice: 2900,
     pnlPct,
     pnlUsdt: pnlPct,
-    holdingHours: 20,
+    holdingHours,
     indicators: ind({ atrPct }),
   });
   return [
-    ...Array.from({ length: 8 }, (_, i) => mk(i, 3, 3.4)),
-    ...Array.from({ length: 6 }, (_, i) => mk(i + 8, 14, -2.1)),
+    ...Array.from({ length: 8 }, (_, i) => mk(i, 0.6, 3.4, 20)),
+    ...Array.from({ length: 6 }, (_, i) => mk(i + 8, 2.2, 3.2, 400)),
   ];
 }
 
@@ -96,13 +101,34 @@ describe('report', () => {
   });
 
   test('reports the aggregate the model needs to spot the pattern', () => {
-    expect(report).toContain('14 trades, 8 wins (57.1%)');
+    // No-cutloss guarantees every closed trade is a win — win rate is always 100%.
+    expect(report).toContain('14 trades, 14 wins (100.0%)');
   });
 
-  test('buckets by entry ATR so the volatility split is visible without arithmetic', () => {
-    // Winners all sat under 4%, losers all above 12%.
-    expect(report).toMatch(/BY ENTRY ATR% — <4: 8 trades, 100% win, avg 3\.40%/);
-    expect(report).toMatch(/>12: 6 trades, 0% win, avg -2\.10%/);
+  test('buckets by entry ATR so the holding-time split is visible without arithmetic', () => {
+    // Calm entries (atrPct 0.6) turn over in 20h; volatile ones (atrPct 2.2) sit for 400h.
+    // pnlPct is nearly identical either way — the discriminator is hold time and %/day.
+    expect(report).toMatch(
+      /BY ENTRY ATR% — 0\.5-1: 8 trades, avg 3\.40%, median hold 20\.0h, 4\.08%\/hari/,
+    );
+    expect(report).toMatch(/>2: 6 trades, avg 3\.20%, median hold 400\.0h, 0\.19%\/hari/);
+  });
+
+  test('%/day discriminates between buckets even though pnlPct barely differs', () => {
+    const calm = /0\.5-1: \d+ trades, avg ([\d.]+)%, median hold [\d.]+h, ([\d.]+)%\/hari/.exec(
+      report,
+    )!;
+    const volatile = /(?<!\d)>2: \d+ trades, avg ([\d.]+)%, median hold [\d.]+h, ([\d.]+)%\/hari/.exec(
+      report,
+    )!;
+    const calmPnl = Number(calm[1]);
+    const volatilePnl = Number(volatile[1]);
+    const calmEff = Number(calm[2]);
+    const volatileEff = Number(volatile[2]);
+    // pnlPct is nearly the same (both close to grid-step %)...
+    expect(Math.abs(calmPnl - volatilePnl)).toBeLessThan(0.5);
+    // ...but %/day is over 20x apart because volatile entries lock capital 20x longer.
+    expect(calmEff / volatileEff).toBeGreaterThan(20);
   });
 
   test('surfaces block counts per rule so an over-tight rule is detectable', () => {
