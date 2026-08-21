@@ -77,6 +77,14 @@ describe('grid maths', () => {
     expect(target).toEqual([3000, 2800]);
   });
 
+  test('the top of the grid is never bid — it is a sell target only', () => {
+    // Price above the grid's upper bound: without excluding the top level,
+    // this would return [3200, 3100, 3000] and a bid could fill at 3200,
+    // which has no level above it to sell at.
+    const levels = gridLevels(config);
+    expect(targetBidLevels(3250, levels, [], 3)).toEqual([3100, 3000, 2900]);
+  });
+
   test('sell target is the first level above the entry', () => {
     expect(sellTargetFor(lot({ gridLevel: 2900, entryPrice: 2900 }), gridLevels(config))).toBe(3000);
   });
@@ -147,6 +155,17 @@ describe('decideTick', () => {
     const plan = decideTick({ snapshot: snap({ price: 3050 }), positions: positions(), lessons: quiet, config });
     const bid = plan.placeBids.find((b) => b.gridLevel === 3000)!;
     expect(bid.qty).toBeCloseTo(100 / 3000, 8);
+  });
+
+  test('never places a bid at the top of the grid, even when price is above it', () => {
+    const plan = decideTick({
+      snapshot: snap({ price: 3250 }),
+      positions: positions(),
+      lessons: quiet,
+      config,
+    });
+    expect(plan.placeBids.some((b) => b.gridLevel === config.upper)).toBe(false);
+    expect(plan.placeBids.map((b) => b.gridLevel)).toEqual([3100, 3000, 2900]);
   });
 
   test('a blocked entry cancels resting bids instead of leaving them on the book', () => {

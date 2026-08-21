@@ -66,15 +66,24 @@ export function evaluateRules(
   return { allowed: true };
 }
 
-/** The N nearest grid levels at or below `price` that hold no open lot. */
+/**
+ * The N nearest grid levels at or below `price` that hold no open lot.
+ *
+ * A grid of N levels has only N-1 tradeable slots: the top level is a sell
+ * target only, never a bid, because a lot filled there would have no level
+ * above it to sell at (sellTargetFor would return undefined and the lot
+ * would sit forever with no exit). Excluding it here is what guarantees
+ * every lot the bot opens has a sell target.
+ */
 export function targetBidLevels(
   price: number,
   levels: number[],
   lots: Lot[],
   maxOpenBids: number,
 ): number[] {
+  const biddable = levels.slice(0, -1); // top level is a sell target only
   const taken = new Set(lots.map((l) => l.gridLevel));
-  return levels
+  return biddable
     .filter((l) => l <= price && !taken.has(l))
     .reverse()
     .slice(0, maxOpenBids);
