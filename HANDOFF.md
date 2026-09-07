@@ -1,140 +1,158 @@
-# Handoff: Grid bot — fix top-level trap, re-range, make evaluator learnable
+# Handoff: Cut the grid bot over from dry-run to Binance spot testnet
 
-**Generated**: 2026-08-21 10:15 WIB
-**Branch**: `chore/sync-report-feature-and-runtime-state` (pushed, tracking `origin`, not yet merged to `main`)
-**Status**: Ready for Review
+**Generated**: 2026-09-07 14:10 WIB
+**Branch**: `chore/sync-report-feature-and-runtime-state` (pushed, tracking `origin`, not merged to `main`)
+**Status**: In Progress — testnet soak running clean, no trades closed yet
 
 ## Goal
 
-Fix three related problems found by analyzing 28 days of `data/decision-log.json` (2026-07-24 → 2026-08-21): a live defect where a lot bought at the top grid level never gets a sell order, a grid range that had drifted below market price, and an LLM reflection loop whose win-rate/pnl% feedback signal is mathematically constant and therefore useless.
+User wants to move `grid-bot.service` off the 6-week DRY_RUN soak and onto **Binance spot testnet** (`DRY_RUN=false`, `TESTNET=true`) to validate real exchange plumbing (auth, order placement, cancel, reconcile against real server responses) before ever considering a real-money run. No code changes — config + runtime-state only.
 
-Full writeup: `docs/plan-2026-08-21-perbaikan-grid-bot.md` (source of truth for the "why").
+Prior session's work (top-level-trap fix, re-range to 1900–2500, evaluator learnability) is already committed (`7a38a9f`..`b3791d7`) and unaffected. This session is purely the testnet cutover.
 
 ## Completed
 
-- [x] **P0 defect fix** — `targetBidLevels` (`src/strategies/grid.ts`) now excludes the grid's top level from biddable levels (`levels.slice(0, -1)`). Root cause: `sellTargetFor` only looks *above* a lot's grid level, so a lot bought at the top level got `undefined` and `decideTick` skipped it forever (immortal position, no exit).
-- [x] Regression tests added in `test/agent.test.ts` — confirmed (via `git stash` on `grid.ts` only) that both **fail without the fix**.
-- [x] **P0 re-range** — `.env`: `GRID_LOWER` 1500→1900, `GRID_UPPER` 2200→2500, `MAX_DRAWDOWN_USDT` 400→350 (kept the "~50% of capital" comment honest at the new 700 USDT total). `.env` is gitignored — this edit is **not** in git history, see Setup Required below.
-- [x] **P1 `seed-atr-guard` retune** — `data/lessons.json`: threshold 12→4 (12 never fired; observed atrPct peaked at 2.50% over the whole log). `version` bumped to 2.
-- [x] **P1 evaluator learnability** — win rate is 100% by construction (no-cutloss, sells strictly above entry) and pnlPct is fixed by grid level, not market conditions, so the old win%/avg-pnl% buckets were constant everywhere. Replaced with median-hold-time and %/day-of-capital:
-  - `src/report.ts`: new exported `pctPerDay(d)`; `DailyStats`/`groupByDay`/`overallStats`/`printTable` extended with `avgHoldingHours`/`avgPctPerDay`.
-  - `src/strategies/evaluator.ts`: `bucketise` output format changed; ATR bucket edges recalibrated `[4,8,12]` → `[0.5,1,2]`; `SYSTEM_PROMPT` now explicitly tells the LLM win rate/pnlPct carry no signal and that `block_entry` can only help in a downtrend, only cost in an uptrend.
-  - `src/types.ts`: `LessonEvidence.avgPctPerDay` added.
-  - `test/evaluator.test.ts`, `test/report.test.ts`: fixtures and assertions updated to match.
-- [x] Full verification: `bun test` → **102 pass, 0 fail**. `bun run report` confirms lot-1900 ≈ 0.20%/day vs lot-1800 ≈ 3.25%/day (16× spread — proves the new metric actually discriminates). `bun run evaluate` still correctly gates on `not-enough-trades` (2 < 5).
-- [x] Isolated smoke tests (temp `DATA_DIR`, didn't touch the live process): confirmed `7 levels 1900..2500`, `700 USDT`, bids at 2300/2200/2100, never at 2500; and a manual trap test (`GRID_UPPER` forced below market) confirmed bids land one level down, never on the (now-invalid) top.
-- [x] User restarted `grid-bot.service` (systemd) themselves — confirmed via `systemctl status` it picked up the new grid (`7 levels 1900..2500`, `capital: 700 USDT`) and placed bids at 2300/2200/2100.
-- [x] 7 commits made and pushed to `origin/chore/sync-report-feature-and-runtime-state` (see `git log --oneline main..HEAD`).
+- [x] Confirmed testnet reachable: probed `testnet.binance.vision` via ccxt sandbox mode — ETH/USDT exists, min notional $5, price ~$2500 (tracks mainnet).
+- [x] User generated **HMAC-SHA256 testnet API keys** at `testnet.binance.vision` (GitHub login) and wrote them into `.env`.
+- [x] `.env` restructured: active `EXCHANGE_API_KEY`/`EXCHANGE_SECRET` = testnet keys; **old mainnet keys commented out** just below, labeled `Mainnet (NONAKTIF ...)`.
+- [x] Verified testnet balance via API `fetchBalance`: **USDT 10000 free** (faucet auto-funded, plus 1 BTC / 1 ETH / assorted). Spot testnet has no balances UI — API is the only way.
+- [x] `sudo systemctl stop grid-bot` (clean SIGTERM, released lock).
+- [x] Full pre-switch backup: `cp -r data /root/projects/ethereum-bot-trading-BACKUP-dryrun-2026-09-07/` (sibling of repo, **outside git**).
+- [x] Cleaned runtime state so testnet starts fresh:
+  - `data/positions.json` → `{ "lots": [], "bids": [] }` (dropped 3 stale `dry-buy-*` bids — see Failed Approaches for why this is mandatory).
+  - `data/breaker.json` → `{ "tripped": false, "consecutiveErrors": 0 }`.
+  - `data/decision-log.json` → `[]`; the 25 dry-run events archived to `data/decision-log.dryrun-archive.json` (untracked).
+  - `data/lessons.json` **untouched** — v2, `seed-atr-guard`=4, still enforced.
+- [x] `.env`: `DRY_RUN=true` → `DRY_RUN=false` (`TESTNET=true` unchanged, grid/breaker unchanged).
+- [x] `sudo systemctl start grid-bot` → startup log shows `mode : TESTNET (real orders on Binance sandbox)`.
+- [x] Verified end-to-end: bot placed **3 real limit-buy orders** on the testnet book (order ids `9403816/17/18`, numeric — not `dry-buy-*`) at 2400/2300/2200. Confirmed via independent API `fetchOpenOrders` + `fetchBalance` (USDT 299.54 locked).
+- [x] ~5 min of ticks, no fills, no errors, breaker not tripped.
+- [x] Memories written: `testnet-soak-2026-09`, `live-capital-sizing` (+ `MEMORY.md` index).
 
 ## Not Yet Done
 
-- [ ] PR not opened. GitHub gave this link on push: https://github.com/yayanrw/ethereum-bot-trading/pull/new/chore/sync-report-feature-and-runtime-state — user hasn't asked for it yet, just say the word.
-- [ ] Everything below is **deliberately deferred** (documented as P2 in the plan doc, not a gap):
-  - Blocked-duration instrumentation (`entry_blocked` currently logs only on transition, not duration).
-  - Fee estimation alongside gross PnL (currently ~3.7% of profit; would matter more if `GRID_STEP` narrows).
-  - Geometric grid step (fixed $100 step means % width shrinks as price rises).
-  - `seed-rsi-guard` — left untouched, 6 blocks / 0 proven bad, wait for evaluator evidence.
+- [ ] Watch the soak — no lot has opened yet (price ~$2497, top bid $2400, needs a ~4% dip).
+- [ ] Nothing committed. `.env` is gitignored; `data/*` drift + the new archive file are uncommitted (see Current State). User has previously folded such drift into "Sync runtime state" commits — offer, don't assume.
+- [ ] PR to `main` still not opened (carried over from prior session): https://github.com/yayanrw/ethereum-bot-trading/pull/new/chore/sync-report-feature-and-runtime-state
+- [ ] Real-money run — explicitly **not** now. Only after weeks of clean testnet. Sizing recommendation already given: start $300–400 total, `USDT_PER_LEVEL` $50–65. See memory `live-capital-sizing`.
 
 ## Failed Approaches (Don't Repeat These)
 
-None. This was an approved plan executed as designed — no abandoned technical approaches. (One tool-call hiccup mid-session: an early `AskUserQuestion` call passed `preview: null` on some options and got an InputValidationError; fixed by omitting the field. Irrelevant to the codebase, mentioned only for completeness.)
+- **Editing `.env` via `nano`/`pico`/`vi` through the Claude Code `!` prompt** — fails with `Standard input is not a terminal`. The `!` prompt only runs non-interactive commands. Fix: user pasted keys into chat and the agent wrote them with the Edit tool (acceptable here — testnet keys can only touch sandbox play-money). For real keys later: use a real SSH terminal, or a non-interactive `sed -i` one-liner with `read -rsp`.
+- **Starting testnet against the existing `data/positions.json`** (which held 3 `dry-buy-33/34/37` bids) — would be broken. `reconcile` calls `ex.fetchOrderStatus("dry-buy-33")` → real Binance `fetchOrder` → `OrderNotFound` thrown (NOT caught in `fetchOrderStatus`, only `cancelOrder` catches it) → `tick()` throws → after `MAX_CONSECUTIVE_ERRORS=5` the breaker latches. That's why positions.json MUST be cleared to empty before the first testnet start. `lots` was already `[]` so only bids needed clearing.
 
 ## Key Decisions
 
 | Decision | Rationale |
-|---|---|
-| Exclude top grid level via `levels.slice(0, -1)` in `targetBidLevels`, not by changing `sellTargetFor` | `sellTargetFor` was already correct and tested; the bug was entry-side allowing a fill with no possible exit. A grid of N levels has only N−1 tradeable bid slots. |
-| Grid re-ranged to 1900–2500 (not some other range) | User's explicit choice via AskUserQuestion, given price was at 2349 and old range topped out at 2200. |
-| `seed-atr-guard` lowered to 4%, not left at 12% | User's explicit choice; 12 never fired in the whole log (max observed 2.50%), so it was providing zero protection. |
-| Evaluator buckets report median-hold + %/day instead of win%/avg-pnl% | Win rate is 100% by construction (no-cutloss, sell only above entry) and pnlPct is set by grid level, not market state — those two metrics are provably constant. Holding time is the only variable that reflects market conditions. |
-| Committed pre-existing uncommitted `adviseGridStep` work (in `src/report.ts`/`test/report.test.ts`) as its own commit before layering the plan's changes | Kept this batch's diff clean and reviewable; that work predated this session's task. |
-| Split the implementation into 4 commits (fix, retune, evaluator, runtime-state-sync) rather than one big commit | Each is independently reviewable and revertable. |
+|----------|-----------|
+| Testnet-live (`DRY_RUN=false`+`TESTNET=true`), not straight to real money | Real orders hit a real matching engine / real server responses — exercises the exact code paths (`CcxtExchange`, auth, cancel, reconcile) that DRY_RUN never touches, with zero financial risk. |
+| Reuse the same `data/` dir, don't add a separate `DATA_DIR` for testnet | systemd unit has `ProtectSystem=strict` + `ReadWritePaths=.../data` — a new dir would need a unit edit + `daemon-reload`. Cleaning `data/` in place is simpler and fully reversible via the external backup. |
+| Archive `decision-log.json` to `*.dryrun-archive.json`, start live log at `[]` | Keeps `bun run report` for the testnet phase clean (no dry-run trades mixed in). Evaluator re-gates at 0 trades → won't run until 5 fresh testnet closes; that's expected/desired. |
+| Keep mainnet keys commented in `.env`, not deleted | One-line rollback. |
+| `MAX_DRAWDOWN_USDT=350` left as-is | No real money at risk on testnet; not worth changing. |
+| Backup dir placed at `/root/projects/ethereum-bot-trading-BACKUP-dryrun-2026-09-07/` (sibling, outside repo) | Keeps it out of `git status` and outside the systemd `ReadWritePaths` sandbox. |
 
 ## Current State
 
-**Working**: Full test suite green (102/102). `grid-bot.service` is live, restarted, running the new grid (1900–2500, 700 USDT) in DRY_RUN+TESTNET mode (no real funds at risk).
+**Working**: `grid-bot.service` `active`, testnet mode. 3 resting testnet buy orders at 2400/2300/2200 (verified on exchange). Ticking every 60s, `lots 0 bids 3`, breaker clean. Full test suite still 102/102 (unchanged — no code touched).
 
-**Broken**: Nothing known.
+**Broken**: Nothing.
 
-**Uncommitted Changes**: Only `data/breaker.json` shows as modified (`git status`) — this is the live bot ticking and rewriting `lastPrice` every poll (60s). It is **not** part of this work; expected drift, safe to ignore or fold into a later "sync runtime state" commit. Do not treat it as a regression.
+**Uncommitted Changes**:
+- `data/breaker.json` — `lastPrice` now testnet feed value, fresh (no trip).
+- `data/positions.json` — 3 testnet bids with numeric order ids (was 3 `dry-buy-*`).
+- `data/decision-log.json` — reset to `[]` (was 25 dry-run events; hence the `-227 lines` in `git diff --stat`).
+- `data/decision-log.dryrun-archive.json` — **untracked**, the archived 25 events.
+- `.env` — **gitignored**, not in `git status`: `DRY_RUN=false`, testnet keys active, mainnet keys commented.
 
 ## Files to Know
 
 | File | Why It Matters |
-|---|---|
-| `docs/plan-2026-08-21-perbaikan-grid-bot.md` | The approved plan — full analysis, rationale, and verification checklist this session executed against. Read this first for "why". |
-| `src/strategies/grid.ts` | `targetBidLevels` — the P0 fix. `sellTargetFor` right below it is correct and untouched. |
-| `src/strategies/evaluator.ts` | Reflection loop: `bucketise`, `SYSTEM_PROMPT`, `LESSONS_SCHEMA` — all touched for the learnability fix. |
-| `src/report.ts` | `pctPerDay` — the single definition of the %/day metric, shared by the CLI report and the evaluator. |
-| `data/lessons.json` | `seed-atr-guard` threshold now 4 (was 12). `seed-rsi-guard` untouched. |
-| `.env` (gitignored, local only) | `GRID_LOWER=1900`, `GRID_UPPER=2500`, `MAX_DRAWDOWN_USDT=350`. **Not in git** — see Setup Required. |
-| `test/agent.test.ts` | Has the two regression tests that catch the top-level-trap defect if it regresses. |
+|------|----------------|
+| `.env` (gitignored) | `DRY_RUN=false`, `TESTNET=true`. Active exchange keys = testnet; mainnet keys commented right below. Grid 1900–2500 / $100 / 3 bids unchanged. |
+| `src/core/exchange.ts` | `makeClient` line ~42: `if (cfg.testnet) client.setSandboxMode(true)` — the only thing that makes it testnet. `CcxtExchange` (real orders) vs `DryRunExchange` (sim) chosen at `createExchange` by `cfg.dryRun`. |
+| `src/index.ts` | `reconcile` (line ~53) is what would choke on stale `dry-buy-*` ids. Main loop + `tick` here. |
+| `data/positions.json` | Live order state. Numeric `orderId` = real testnet order. |
+| `data/decision-log.dryrun-archive.json` | The 25 pre-cutover dry-run events, if anyone needs the history / wants to run `report` on it. |
+| `/root/projects/ethereum-bot-trading-BACKUP-dryrun-2026-09-07/` | Full pre-cutover `data/` snapshot for rollback. |
+| `HANDOFF.md` (this file, committed `b3791d7` previously) | Was the prior session's fix handoff — now overwritten with this one. |
 
 ## Code Context
 
-**The fix** (`src/strategies/grid.ts`):
+**What selects the exchange impl** (`src/core/exchange.ts`):
 ```ts
-export function targetBidLevels(
-  price: number,
-  levels: number[],
-  lots: Lot[],
-  maxOpenBids: number,
-): number[] {
-  const biddable = levels.slice(0, -1); // top level is a sell target only
-  const taken = new Set(lots.map((l) => l.gridLevel));
-  return biddable
-    .filter((l) => l <= price && !taken.has(l))
-    .reverse()
-    .slice(0, maxOpenBids);
+function makeClient(cfg: Config) {
+  const client = new ccxt.binance({
+    apiKey: cfg.exchange.apiKey, secret: cfg.exchange.secret,
+    enableRateLimit: true, options: { defaultType: 'spot' },
+  });
+  if (cfg.testnet) client.setSandboxMode(true);   // -> testnet.binance.vision
+  return client;
 }
+// createExchange: cfg.dryRun ? new DryRunExchange(cfg) : new CcxtExchange(cfg)
 ```
 
-**The new outcome metric** (`src/report.ts`):
-```ts
-export function pctPerDay(d: Decision): number {
-  const hours = d.holdingHours;
-  if (hours === undefined || hours <= 0) return 0;
-  return (d.pnlPct ?? 0) / (hours / 24);
-}
+**Check testnet state independently** (keys are read from `.env` by Bun):
+```bash
+bun -e '
+import ccxt from "ccxt";
+const c = new ccxt.binance({ apiKey: process.env.EXCHANGE_API_KEY, secret: process.env.EXCHANGE_SECRET,
+  enableRateLimit: true, options: { defaultType: "spot" } });
+c.setSandboxMode(true);
+console.log(await c.fetchOpenOrders("ETH/USDT"));
+console.log((await c.fetchBalance()).free.USDT);
+'
 ```
 
-**New evaluator bucket line format** (was `${n} trades, ${win}% win, avg ${pnl}%`):
+**Expected `positions.json` shape after a fill** — bid promoted to lot, then a sell order id attached:
+```json
+{ "lots": [ { "id": "<uuid>", "gridLevel": 2400, "entryPrice": 2400, "qty": 0.0416,
+             "costUsdt": 99.84, "openedAt": "...", "sellOrderId": "<numeric>" } ],
+  "bids": [ /* 2300, 2200, and a fresh 2400 re-bid once the lot clears */ ] }
 ```
-BY ENTRY ATR% — 0.5-1: 8 trades, avg 3.40%, median hold 20.0h, 4.08%/hari | >2: 6 trades, avg 3.20%, median hold 400.0h, 0.19%/hari
-```
+
+**Non-obvious**: a resting bid at level N, once filled, gets a sell placed at N+$100 (`sellTargetFor`). Sells do NOT rest on the book between ticks by design — they're submitted only when price reaches target AND rules pass. Top grid level (2500) is never bid (`targetBidLevels` does `levels.slice(0,-1)`).
 
 ## Resume Instructions
 
-1. `git fetch && git log --oneline main..origin/chore/sync-report-feature-and-runtime-state` — confirm you see the same 7 commits listed under "Completed" above.
-2. `bun test`
-   - Expected: `102 pass, 0 fail`.
-3. `bun run report`
-   - Expected: table has `avg %/day` column; with the current `data/decision-log.json` the two closed trades show ≈0.20%/day (1900 lot, held 631.7h) and ≈3.25%/day (1800 lot, held 41.1h).
-4. `systemctl status grid-bot --no-pager | head -20`
-   - Expected: log lines show `grid : 7 levels 1900..2500 step 100` and `capital : ... 700 USDT fully at risk`, with resting bids only at 2300/2200/2100 (never 2500).
-   - If it still shows the old 1500..2200 range: the service hasn't picked up `.env` yet — needs `systemctl restart grid-bot` (safe only when `lots=0`; check the log first).
-5. To continue with P2 work (not requested yet, but the natural next step per the plan's "Yang sengaja TIDAK dikerjakan" section): start with blocked-duration instrumentation in `grid.ts`/`decision-log.json`, since the evaluator's `SYSTEM_PROMPT` already tells the LLM to detect over-tight rules but the data to do so doesn't exist yet.
+1. Confirm the service is alive and in testnet mode:
+   ```
+   systemctl is-active grid-bot
+   journalctl -u grid-bot --no-pager -o cat | grep -E 'mode|\[tick\]' | tail -5
+   ```
+   - Expected: `active`; a startup line `mode : TESTNET (real orders on Binance sandbox)`; recent `[tick] ... lots N bids M`.
+   - If `mode : DRY-RUN`: `.env` wasn't picked up — `sudo systemctl restart grid-bot` (safe only when `lots 0`; check the last tick first).
+
+2. Confirm the bot's state matches the exchange (run the `bun -e` snippet under Code Context):
+   - Expected: `fetchOpenOrders` returns the same bids `data/positions.json` lists; USDT locked ≈ `0.0416*2400 + 0.0434*2300 + 0.0454*2200` ≈ $300 while `lots 0`.
+   - If they diverge: `reconcile` will self-heal on the next tick — watch one cycle before doing anything.
+
+3. Watch for the first fill (price must dip to ~$2400):
+   ```
+   journalctl -u grid-bot -f -o cat
+   ```
+   - Expected on a dip: `[fill] BUY  lvl 2400 ...` then within a few ticks a sell placed at 2500; on recovery `[fill] SELL lvl 2400 ... pnl ~4.16 USDT (4.17%)`.
+   - `bun run report` will start showing rows only after the first close.
+
+4. Only after ~2–4 weeks clean: discuss a real-money run. Do NOT flip `TESTNET=false` without: restoring mainnet keys, setting `LIVE_CONFIRM=i-understand-the-risk`, re-sizing capital per memory `live-capital-sizing`, and explicit user go-ahead.
 
 ## Setup Required
 
-- `.env` is gitignored and was edited locally, not committed. A fresh clone needs it recreated with (at minimum) these values changed from whatever template/defaults exist:
-  ```
-  GRID_LOWER=1900
-  GRID_UPPER=2500
-  GRID_STEP=100
-  MAX_DRAWDOWN_USDT=350
-  ```
-  Real exchange/LLM API keys go in the same file locally — never in git, never echoed into any doc.
-- `grid-bot.service` (systemd, `/etc/systemd/system/grid-bot.service`) runs `bun run src/index.ts` against this repo's `cwd` and default `DATA_DIR=data/`. It has been running continuously since 2026-08-06 in DRY_RUN+TESTNET (no real funds). Only one instance can hold the lock on a given `DATA_DIR` (`src/core/lock.ts`) — don't run `bun run start` manually against the same `data/` while the service is up; use `DATA_DIR=/some/temp/dir` for manual smoke tests instead (that's how this session verified the fix without disturbing production).
+- `.env` must have valid **testnet** `EXCHANGE_API_KEY`/`EXCHANGE_SECRET` (HMAC-SHA256 from `testnet.binance.vision`, GitHub login). Mainnet keys will be rejected by the sandbox endpoint.
+- Testnet balance is faucet-granted automatically on first key creation (~10000 USDT). No claim step, no UI — verify with the API snippet above.
+- `grid-bot.service` runs as root, `WorkingDirectory=/root/projects/ethereum-bot-trading`, `EnvironmentFile=-.../.env`, `ReadWritePaths=.../data`. Only one instance per `DATA_DIR` (lock on `data/bot.lock`) — never `bun run start` against `data/` while the service is up; use `DATA_DIR=/tmp/...` for manual tests.
 
 ## Edge Cases & Error Handling
 
-- `lessons.json` changes take effect on the **next tick** without a restart (the bot reloads it every cycle). `.env` and any `.ts` code changes do **not** — they require `systemctl restart grid-bot`.
-- If `GRID_UPPER` is ever set below the current market price (grid left behind again), the fix guarantees the bot bids one level below the top instead of at the (invalid) top — verified manually this session.
-- `decision-log.json` is append-only and durable; re-ranging the grid does not touch it, so historical win-rate/PnL stats survive.
+- Stale/foreign order id in `positions.json` on a testnet/live start → `fetchOrder` throws `OrderNotFound`, uncaught in `fetchOrderStatus`, tick fails, breaker latches after 5. → Always clear `positions.json` when switching exchange identity.
+- `lessons.json` reloads every tick (no restart). `.env` and `.ts` changes need `systemctl restart grid-bot`.
+- Testnet feed can be thin / jumpy — `MAX_PRICE_JUMP_PCT=15` will *skip* (not latch) a tick on a >15% inter-tick move. Historic dry-run logs show this firing; harmless.
+- Circuit-breaker drawdown/error trips **latch** across restart (`data/breaker.json`); clear with `bun run reset-breaker`.
 
 ## Warnings
 
-- `.env` contains real-looking `EXCHANGE_API_KEY`, `EXCHANGE_SECRET`, `ANTHROPIC_API_KEY` — do not commit, log, or paste this file's contents anywhere shareable.
-- `data/breaker.json` (and to a lesser extent `positions.json`/`decision-log.json`) will keep drifting under `git status` as long as `grid-bot.service` runs — that's the live bot ticking, not uncommitted work you introduced. Check `git diff` content, not just the modified flag, before assuming something's wrong.
-- This repo's PnL is **gross** everywhere (fees never deducted) — a deliberate, documented simplification, not a bug.
+- `journalctl -u grid-bot` **without a date filter** shows August dry-run lines (`[dry-run] fill ...`, `[breaker] price moved 15%`, 88.1h holds). Those are pre-cutover. The testnet session starts at the `2026-09-07T07:03:10Z` tick. Filter with `--since "2026-09-07 14:03"`.
+- `git diff --stat` shows `data/decision-log.json` losing 227 lines — that's the deliberate archive+reset, not data loss. The events are in `data/decision-log.dryrun-archive.json` and the backup dir.
+- `.env` contains real testnet keys (low risk) AND commented real mainnet keys (NOT low risk) AND a real `ANTHROPIC_API_KEY`. Never commit, echo, or paste the file.
+- Recorded PnL is **gross** everywhere — no fees deducted. Intentional.
+- Do not delete `/root/projects/ethereum-bot-trading-BACKUP-dryrun-2026-09-07/` until the testnet phase is clearly over.
