@@ -97,7 +97,14 @@ class CcxtExchange implements Exchange {
   }
 
   async fetchOrderStatus(id: string): Promise<OrderStatus> {
-    const o = await this.client.fetchOrder(id, this.cfg.grid.symbol);
+    let o;
+    try {
+      o = await this.client.fetchOrder(id, this.cfg.grid.symbol);
+    } catch (err) {
+      // Gone from the exchange (e.g. testnet reset): reconcile drops it instead of tripping the breaker.
+      if (err instanceof ccxt.OrderNotFound) return { id, state: 'canceled', filled: 0, average: 0 };
+      throw err;
+    }
     const state: OrderState =
       o.status === 'closed' ? 'closed' : o.status === 'canceled' ? 'canceled' : 'open';
     return {
